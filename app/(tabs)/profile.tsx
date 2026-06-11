@@ -78,8 +78,6 @@ export default function ProfileScreen() {
 
   async function handleSignOut() {
     if (Platform.OS === 'web') {
-      // window.confirm is the only reliable confirmation on web
-      if (!window.confirm('Are you sure you want to sign out?')) return;
       try {
         await signOut();
         router.replace('/(auth)/login');

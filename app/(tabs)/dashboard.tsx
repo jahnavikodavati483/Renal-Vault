@@ -116,6 +116,16 @@ export default function DashboardScreen() {
             )}
           </View>
 
+          {/* ── Duplicate Report Warning ── */}
+          {latestReport?.isDuplicate && (
+            <View style={s.duplicateBanner}>
+              <Ionicons name="copy-outline" size={16} color="#C2410C" />
+              <Text style={s.duplicateBannerTxt}>
+                You uploaded a duplicate report. Showing latest analysis (2nd Copy).
+              </Text>
+            </View>
+          )}
+
           {/* ── CKD Stage / Loading ── */}
           {loading && !latestReport ? (
             <LinearGradient colors={[TEAL, TEAL_DARK]} style={s.ckdCard} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
@@ -252,7 +262,7 @@ export default function DashboardScreen() {
                 ))}
               </View>
             </View>
-            <TrendPreview tab={activeTab} reports={reports} />
+            <TrendPreview tab={activeTab} reports={reports} sex={profile?.sex ?? 'male'} />
           </View>
 
           {/* ── Next Checkup ── */}
@@ -365,13 +375,15 @@ export default function DashboardScreen() {
               {/* Health Update */}
               {latestReport && (
                 <View style={s.notifItem}>
-                  <View style={[s.notifIcon, { backgroundColor: '#DCFCE7' }]}>
-                    <Ionicons name="analytics" size={18} color="#16A34A" />
+                  <View style={[s.notifIcon, { backgroundColor: latestReport.isDuplicate ? '#FFEDD5' : '#DCFCE7' }]}>
+                    <Ionicons name="analytics" size={18} color={latestReport.isDuplicate ? '#C2410C' : '#16A34A'} />
                   </View>
                   <View style={s.notifContent}>
-                    <Text style={s.notifTitle}>Latest Analysis Status</Text>
+                    <Text style={s.notifTitle}>
+                      Latest Analysis Status {latestReport.isDuplicate ? '(Duplicate)' : ''}
+                    </Text>
                     <Text style={s.notifDesc}>
-                      Stage G{ckdStage} detected. Your Kidney Health Score is {healthScore}/100 based on your last lab report.
+                      {latestReport.isDuplicate ? '[Duplicate Report] ' : ''}Stage G{ckdStage} detected. Your Kidney Health Score is {healthScore}/100 based on your last lab report.
                     </Text>
                   </View>
                 </View>
@@ -428,8 +440,8 @@ function MetricCard({ icon, color, label, value, unit }: {
   );
 }
 
-function TrendPreview({ tab, reports }: { tab: 'eGFR' | 'Creat.' | 'BUN'; reports: Report[] }) {
-  const dataPoints = [...reports]
+function TrendPreview({ tab, reports, sex }: { tab: 'eGFR' | 'Creat.' | 'BUN'; reports: Report[]; sex: 'male' | 'female' }) {
+  const actualPoints = [...reports]
     .reverse()
     .map(r => {
       const val =
@@ -441,25 +453,59 @@ function TrendPreview({ tab, reports }: { tab: 'eGFR' | 'Creat.' | 'BUN'; report
     .filter((p): p is { val: number; date: string } => p !== null)
     .slice(-8);
 
-  if (dataPoints.length === 0) {
-    return (
-      <View style={s.noChart}>
-        <Text style={s.noChartTxt}>No data — upload a report to see your trend</Text>
-      </View>
-    );
+  const SAMPLE_DATA: Record<'eGFR' | 'Creat.' | 'BUN', number[]> = {
+    eGFR:   [85, 88, 91, 94],
+    'Creat.': [1.4, 1.3, 1.1, 0.9],
+    BUN:    [24, 21, 18, 14],
+  };
+
+  function getSamplePoints(): { val: number; date: string }[] {
+    const vals = SAMPLE_DATA[tab];
+    const now = new Date();
+    return vals.map((v, idx) => {
+      const d = new Date(now.getTime() - (3 - idx) * 7 * 24 * 60 * 60 * 1000);
+      return { val: v, date: d.toISOString() };
+    });
+  }
+
+  let dataPoints: { val: number; date: string }[] = [];
+  let isSample = false;
+  let isBaseline = false;
+
+  if (reports.length === 0 || actualPoints.length === 0) {
+    dataPoints = getSamplePoints();
+    isSample = true;
+  } else if (actualPoints.length === 1) {
+    let baselineVal = 100;
+    if (tab === 'Creat.') {
+      baselineVal = sex === 'male' ? 1.05 : 0.82;
+    } else if (tab === 'BUN') {
+      baselineVal = 13.5;
+    } else if (tab === 'eGFR') {
+      baselineVal = 95;
+    }
+
+    const reportDate = new Date(actualPoints[0].date);
+    const baselineDate = new Date(reportDate.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    dataPoints = [
+      { val: baselineVal, date: baselineDate },
+      actualPoints[0]
+    ];
+    isBaseline = true;
+  } else {
+    dataPoints = actualPoints;
   }
 
   const vals = dataPoints.map(p => p.val);
   const minV = Math.min(...vals);
   const maxV = Math.max(...vals);
-  // Ensure minimum spread of 8 units so y-axis looks meaningful
   const spread = Math.max(8, (maxV - minV) * 1.5);
   const mid    = (minV + maxV) / 2;
   const yMax   = Math.ceil(mid + spread / 2);
   const yMin   = Math.max(0, Math.floor(mid - spread / 2));
   const yRange = yMax - yMin;
 
-  // 9 y-axis labels from top to bottom
   const numLabels = 9;
   const yLabels = Array.from({ length: numLabels }, (_, i) =>
     Math.round(yMax - (i * yRange) / (numLabels - 1))
@@ -489,7 +535,6 @@ function TrendPreview({ tab, reports }: { tab: 'eGFR' | 'Creat.' | 'BUN'; report
       const p0 = coords[i];
       const p1 = coords[i + 1];
 
-      // Cubic Bezier control points for smooth curved transition
       const cp1x = p0.x + (p1.x - p0.x) / 3;
       const cp1y = p0.y;
       const cp2x = p0.x + (2 * (p1.x - p0.x)) / 3;
@@ -506,6 +551,19 @@ function TrendPreview({ tab, reports }: { tab: 'eGFR' | 'Creat.' | 'BUN'; report
 
   return (
     <View style={{ paddingBottom: 4 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, paddingHorizontal: 12 }}>
+        <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>{dateStr}</Text>
+        {isSample && (
+          <View style={{ backgroundColor: '#E0F2FE', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+            <Text style={{ fontSize: 9, color: '#0369A1', fontWeight: '700' }}>Demo Trend</Text>
+          </View>
+        )}
+        {isBaseline && (
+          <View style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+            <Text style={{ fontSize: 9, color: '#B45309', fontWeight: '700' }}>Baseline comparison</Text>
+          </View>
+        )}
+      </View>
       <View style={{ flexDirection: 'row', height: 150 }}>
         {/* Y-axis labels */}
         <View style={s.yAxis}>
@@ -878,5 +936,23 @@ const s = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#fff',
+  },
+  duplicateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFEDD5',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+  },
+  duplicateBannerTxt: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#C2410C',
+    flex: 1,
   },
 });

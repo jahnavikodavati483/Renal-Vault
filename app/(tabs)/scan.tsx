@@ -104,7 +104,7 @@ export default function ScanScreen() {
     if (!perm.granted) { Alert.alert('Permission required', 'Gallery access needed.'); return; }
     const result = await ImagePicker.launchImageLibraryAsync({
       quality: 1,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       base64: false, // we handle base64 ourselves via canvas for reliable resizing
     });
     if (result.canceled || !result.assets?.[0]) return;

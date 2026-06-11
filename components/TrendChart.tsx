@@ -12,27 +12,44 @@ interface TrendChartProps {
   color?: string;
   normalMin?: number;
   normalMax?: number;
+  isSample?: boolean;
+  isBaseline?: boolean;
 }
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
-export function TrendChart({ title, unit, data, color = Colors.primary, normalMin, normalMax }: TrendChartProps) {
-  if (data.length < 2) {
+export function TrendChart({
+  title,
+  unit,
+  data,
+  color = Colors.primary,
+  normalMin,
+  normalMax,
+  isSample = false,
+  isBaseline = false,
+}: TrendChartProps) {
+  if (data.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>Not enough data to show trend.</Text>
-        <Text style={styles.emptySubtext}>Scan at least 2 reports to see trends.</Text>
+        <Text style={styles.emptyText}>No data to show trend.</Text>
+        <Text style={styles.emptySubtext}>Scan reports to see trends.</Text>
       </View>
     );
   }
 
   const values = data.map((d) => d.value);
   const latest = values[values.length - 1];
-  const previous = values[values.length - 2];
+  const previous = values.length > 1 ? values[values.length - 2] : latest;
   const trend = latest > previous ? 'up' : latest < previous ? 'down' : 'stable';
-  const trendIcon = trend === 'up' ? '↑' : trend === 'down' ? '↓' : '→';
+  const trendIcon = values.length > 1 ? (trend === 'up' ? '↑' : trend === 'down' ? '↓' : '→') : '';
   const trendColor =
-    trend === 'stable' ? Colors.textSecondary : trend === 'up' ? Colors.danger : Colors.success;
+    values.length > 1
+      ? trend === 'stable'
+        ? Colors.textSecondary
+        : trend === 'up'
+        ? Colors.danger
+        : Colors.success
+      : Colors.textMuted;
 
   const minV = Math.min(...values);
   const maxV = Math.max(...values);
@@ -85,16 +102,30 @@ export function TrendChart({ title, unit, data, color = Colors.primary, normalMi
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>{title}</Text>
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, flexWrap: 'wrap' }}>
+            <Text style={styles.title}>{title}</Text>
+            {isSample && (
+              <View style={[styles.badge, { backgroundColor: '#E0F2FE' }]}>
+                <Text style={[styles.badgeText, { color: '#0369A1' }]}>Demo Chart</Text>
+              </View>
+            )}
+            {isBaseline && (
+              <View style={[styles.badge, { backgroundColor: '#FEF3C7' }]}>
+                <Text style={[styles.badgeText, { color: '#B45309' }]}>Baseline Comparison</Text>
+              </View>
+            )}
+          </View>
           <Text style={styles.unit}>{unit}</Text>
         </View>
-        <View style={styles.trendBadge}>
-          <Text style={[styles.trendIcon, { color: trendColor }]}>{trendIcon}</Text>
-          <Text style={[styles.trendValue, { color: trendColor }]}>
-            {Math.abs(latest - previous).toFixed(1)}
-          </Text>
-        </View>
+        {values.length > 1 && (
+          <View style={styles.trendBadge}>
+            <Text style={[styles.trendIcon, { color: trendColor }]}>{trendIcon}</Text>
+            <Text style={[styles.trendValue, { color: trendColor }]}>
+              {Math.abs(latest - previous).toFixed(1)}
+            </Text>
+          </View>
+        )}
       </View>
 
       <View style={{ flexDirection: 'row', height: 150, marginTop: Spacing.sm }}>
@@ -312,5 +343,14 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: Colors.textMuted,
     marginTop: Spacing.xs,
+  },
+  badge: {
+    paddingHorizontal: Spacing.xs + 2,
+    paddingVertical: 2,
+    borderRadius: Radius.sm + 2,
+  },
+  badgeText: {
+    fontSize: 9,
+    fontWeight: '700',
   },
 });

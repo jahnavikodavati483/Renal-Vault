@@ -43,6 +43,21 @@ const STATUS_COLOR = {
   low:    Colors.warning,
 };
 
+const SAMPLE_CHART_DATA: Partial<Record<keyof KidneyParameters, number[]>> = {
+  egfr:        [85, 88, 91, 94],
+  creatinine:  [1.4, 1.3, 1.1, 0.9],
+  bun:         [24, 21, 18, 14],
+  potassium:   [4.8, 4.5, 4.2, 4.0],
+  urea:        [38, 34, 30, 26],
+  sodium:      [132, 135, 138, 140],
+  calcium:     [8.2, 8.5, 8.8, 9.2],
+  uricAcid:    [8.0, 7.5, 6.8, 6.0],
+  phosphorus:  [4.8, 4.5, 4.0, 3.5],
+  albumin:     [3.1, 3.4, 3.8, 4.2],
+  hemoglobin:  [10.5, 11.5, 12.5, 13.5],
+  bicarbonate: [20, 22, 24, 26],
+};
+
 export default function HistoryScreen() {
   const { user, profile } = useAuth();
   const { reports, loading, refresh } = useReports(user?.uid);
@@ -51,20 +66,62 @@ export default function HistoryScreen() {
 
   const sex = profile?.sex ?? 'male';
 
-  function getChartData(key: keyof KidneyParameters): ChartDataPoint[] {
+  function getActualChartData(key: keyof KidneyParameters): ChartDataPoint[] {
     return [...reports]
       .reverse()
       .filter(r => typeof r.parameters[key] === 'number')
       .map(r => ({ date: r.createdAt, value: r.parameters[key] as number }));
   }
 
-  // Auto-select first tab that has data
-  const paramsWithData = CHART_PARAMS.filter(p => getChartData(p.key).length > 0);
+  function getSampleChartData(key: keyof KidneyParameters): ChartDataPoint[] {
+    const vals = SAMPLE_CHART_DATA[key] ?? [10, 12, 15, 14];
+    const now = new Date();
+    return vals.map((v, idx) => {
+      const d = new Date(now.getTime() - (3 - idx) * 7 * 24 * 60 * 60 * 1000);
+      return { date: d.toISOString(), value: v };
+    });
+  }
+
+  // Show all tabs when there is no report yet to demonstrate app capabilities
+  const paramsWithData = reports.length === 0 
+    ? CHART_PARAMS 
+    : CHART_PARAMS.filter(p => getActualChartData(p.key).length > 0);
 
   const activeParam  = CHART_PARAMS.find(p => p.key === activeChart)
                     ?? paramsWithData[0]
                     ?? CHART_PARAMS[0];
-  const chartData    = getChartData(activeParam.key);
+
+  let chartData: ChartDataPoint[] = [];
+  let isSample = false;
+  let isBaseline = false;
+
+  if (reports.length === 0) {
+    chartData = getSampleChartData(activeParam.key);
+    isSample = true;
+  } else {
+    const actualPoints = getActualChartData(activeParam.key);
+    if (actualPoints.length === 0) {
+      chartData = getSampleChartData(activeParam.key);
+      isSample = true;
+    } else if (actualPoints.length === 1) {
+      const range = getParameterRange(activeParam.key, sex);
+      const baselineVal = range
+        ? (range.max === 999 ? 100 : (range.min + range.max) / 2)
+        : (activeParam.key === 'egfr' ? 100 : activeParam.key === 'creatinine' ? 1.0 : activeParam.key === 'bun' ? 15 : actualPoints[0].value);
+      
+      const reportDate = new Date(actualPoints[0].date);
+      const baselineDate = new Date(reportDate.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      chartData = [
+        { date: baselineDate, value: baselineVal },
+        actualPoints[0]
+      ];
+      isBaseline = true;
+    } else {
+      chartData = actualPoints;
+    }
+  }
+
   const range        = getParameterRange(activeParam.key, sex);
   const meta         = PARAMETER_META[activeParam.key];
   const currentValue = chartData.length > 0 ? chartData[chartData.length - 1].value : null;
@@ -85,17 +142,9 @@ export default function HistoryScreen() {
         <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: Spacing.xxl }} />
       )}
 
-      {!loading && reports.length === 0 && (
-        <View style={styles.emptyBox}>
-          <Ionicons name="bar-chart-outline" size={52} color={Colors.textMuted} />
-          <Text style={styles.emptyTitle}>No Reports Yet</Text>
-          <Text style={styles.emptySub}>Upload your first lab report to start tracking trends.</Text>
-        </View>
-      )}
-
-      {reports.length > 0 && (
+      {!loading && (
         <>
-          {/* ── Only show tabs for parameters present in reports ─────── */}
+          {/* ── Tabs scrollbar ─────────────────────────────────────────── */}
           {paramsWithData.length > 0 && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll}>
               {paramsWithData.map(p => {
@@ -120,16 +169,18 @@ export default function HistoryScreen() {
           {currentValue !== null && meta && (
             <View style={styles.currentCard}>
               <View style={styles.currentLeft}>
-                <Text style={styles.currentLabel}>Latest {meta.label}</Text>
+                <Text style={styles.currentLabel}>
+                  {isSample ? 'Sample ' : 'Latest '}{meta.label}
+                </Text>
                 {range && (
                   <Text style={styles.currentRange}>
-                    Normal: {range.min}–{range.max} {meta.unit}
+                    Normal: {range.min}–{range.max === 999 ? '90+' : range.max} {meta.unit}
                   </Text>
                 )}
               </View>
               <View style={styles.currentRight}>
                 {(() => {
-                  const st = getParameterStatus(activeChart, currentValue, sex);
+                  const st = getParameterStatus(activeParam.key, currentValue, sex);
                   const color = STATUS_COLOR[st];
                   return (
                     <>
@@ -153,15 +204,15 @@ export default function HistoryScreen() {
             </View>
           )}
 
-          {/* ── Reference range bar (single report) ───────────────────── */}
+          {/* ── Reference range bar (latest value) ─────────────────────── */}
           {currentValue !== null && range && (
             <View style={styles.rangeBarCard}>
               <Text style={styles.rangeBarLabel}>Position in reference range</Text>
-              <RangeBar value={currentValue} min={range.min} max={range.max} color={activeParam.color} />
+              <RangeBar value={currentValue} min={range.min} max={range.max === 999 ? 120 : range.max} color={activeParam.color} />
             </View>
           )}
 
-          {/* ── Trend chart (2+ reports) ───────────────────────────────── */}
+          {/* ── Trend chart ────────────────────────────────────────────── */}
           {chartData.length >= 2 && (
             <View style={styles.chartCard}>
               <TrendChart
@@ -171,31 +222,44 @@ export default function HistoryScreen() {
                 color={activeParam.color}
                 normalMin={range?.min}
                 normalMax={range?.max}
+                isSample={isSample}
+                isBaseline={isBaseline}
               />
             </View>
           )}
 
-          {chartData.length === 1 && (
-            <View style={styles.oneReportNote}>
-              <Ionicons name="information-circle-outline" size={16} color={Colors.textMuted} />
-              <Text style={styles.oneReportText}>
-                Scan a second report to see your {meta?.label} trend over time.
+          {/* ── Demo Notice ────────────────────────────────────────────── */}
+          {isSample && (
+            <View style={styles.demoBanner}>
+              <Ionicons name="information-circle-outline" size={18} color="#0369A1" />
+              <Text style={styles.demoBannerText}>
+                No data logged yet for {meta?.label}. Showing a demo trend curve. Upload a report in the AI tab to populate your data!
               </Text>
             </View>
           )}
 
-          {/* ── All Reports list ───────────────────────────────────────── */}
+          {/* ── Reports List ───────────────────────────────────────────── */}
           <Text style={styles.listTitle}>All Reports</Text>
 
-          {reports.map(report => (
-            <ReportCard
-              key={report.id}
-              report={report}
-              sex={sex}
-              expanded={expandedId === report.id}
-              onToggle={() => setExpandedId(expandedId === report.id ? null : (report.id ?? null))}
-            />
-          ))}
+          {reports.length === 0 ? (
+            <View style={styles.emptyReportsBox}>
+              <Ionicons name="document-text-outline" size={40} color={Colors.textMuted} />
+              <Text style={styles.emptyReportsTitle}>No Reports Saved</Text>
+              <Text style={styles.emptyReportsSub}>
+                Upload or take a photo of your laboratory report under the AI tab to automatically analyze and save it.
+              </Text>
+            </View>
+          ) : (
+            reports.map(report => (
+              <ReportCard
+                key={report.id}
+                report={report}
+                sex={sex}
+                expanded={expandedId === report.id}
+                onToggle={() => setExpandedId(expandedId === report.id ? null : (report.id ?? null))}
+              />
+            ))
+          )}
 
           <View style={{ height: Spacing.xl }} />
         </>
@@ -558,4 +622,19 @@ const styles = StyleSheet.create({
   aiSummaryHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginBottom: Spacing.xs },
   aiSummaryTitle: { ...Typography.labelLarge, color: Colors.primary, fontWeight: '700' },
   aiSummaryText: { ...Typography.bodySmall, color: Colors.text, lineHeight: 18 },
+
+  // Demo warning and empty reports styles
+  demoBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    marginHorizontal: Spacing.md, marginTop: Spacing.sm,
+    padding: Spacing.md, backgroundColor: '#F0F9FF',
+    borderRadius: Radius.md, borderWidth: 1, borderColor: '#BAE6FD',
+  },
+  demoBannerText: { ...Typography.bodySmall, color: '#0369A1', flex: 1 },
+  emptyReportsBox: {
+    alignItems: 'center', padding: Spacing.xl, backgroundColor: Colors.surface,
+    margin: Spacing.md, borderRadius: Radius.lg, ...Shadow.sm,
+  },
+  emptyReportsTitle: { ...Typography.labelLarge, color: Colors.text, fontWeight: '700', marginTop: Spacing.sm },
+  emptyReportsSub: { ...Typography.bodySmall, color: Colors.textMuted, textAlign: 'center', marginTop: Spacing.xs },
 });
