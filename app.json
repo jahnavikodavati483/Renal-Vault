@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "RenalVault AI",
+    "slug": "renalvault-ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "renalvault",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0D47A1"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.renalvault.ai",
+      "infoPlist": {
+        "NSCameraUsageDescription": "RenalVault AI needs camera access to scan lab reports.",
+        "NSPhotoLibraryUsageDescription": "RenalVault AI needs gallery access to upload lab reports."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0D47A1"
+      },
+      "package": "com.renalvault.ai",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-dev-client",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "RenalVault AI needs camera access to scan lab reports."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "RenalVault AI needs gallery access to upload lab reports."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
