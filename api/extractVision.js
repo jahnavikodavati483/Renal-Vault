@@ -4,7 +4,28 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { base64, prompt } = req.body;
+  let body = req.body;
+  if (!body) {
+    const buffers = [];
+    for await (const chunk of req) {
+      buffers.push(chunk);
+    }
+    const rawBody = Buffer.concat(buffers).toString();
+    try {
+      body = JSON.parse(rawBody);
+    } catch (_) {
+      body = {};
+    }
+  } else if (typeof body === 'string') {
+    try {
+      body = JSON.parse(body);
+    } catch (_) {
+      body = {};
+    }
+  }
+
+  const base64 = body?.base64;
+  const prompt = body?.prompt;
 
   if (!base64 || !prompt) {
     return res.status(400).json({ error: 'Missing base64 or prompt' });
